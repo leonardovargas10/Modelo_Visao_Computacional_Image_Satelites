@@ -1,0 +1,14 @@
+*.parquet
+*.csv
+*.xlsx
+*.txt 
+*.keras
+*.pkl 
+*.pth
+*.joblib
+*.zip
+*.tar.gz
+*.mp4
+*.pt 
+__pycache__/
+data/
