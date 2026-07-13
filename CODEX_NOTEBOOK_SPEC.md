@@ -4,6 +4,7 @@ Você deve gerar **um único arquivo Jupyter Notebook (.ipynb)**, chamado `bench
 
 ## Regras Gerais de Execução
 
+0. Os dados estão na pasta data/
 1. Gere o notebook diretamente no formato `.ipynb` (JSON válido de nbformat), não um script `.py`.
 2. Cada seção listada abaixo deve virar, no mínimo: uma célula Markdown de título + explicação teórica, uma ou mais células de código comentadas, e uma célula Markdown de interpretação/conclusão dos resultados daquela etapa.
 3. Use **PyTorch** como framework principal de Deep Learning. Use **LightGBM** para o modelo clássico sobre embeddings.
@@ -14,6 +15,8 @@ Você deve gerar **um único arquivo Jupyter Notebook (.ipynb)**, chamado `bench
 8. Gere gráficos com `matplotlib`/`seaborn` sempre que houver comparação de métricas, distribuições ou visualizações de imagens/embeddings. Todo gráfico deve ter título, labels de eixo e, quando aplicável, legenda.
 9. Ao final de cada bloco de treinamento, imprima/exiba uma tabela de métricas (Accuracy, Precision, Recall, F1-score, AUC) para treino, validação e teste.
 10. Não invente resultados numéricos fixos — o código deve calcular os valores reais a partir da execução; onde a execução completa não for viável (ex.: sem GPU disponível), deixe o código pronto para rodar e sinalize isso explicitamente em uma célula Markdown, sem simular métricas falsas.
+11. Nao construa um modelo overfittado em hipótese alguma. Devemos prezar pela simplicidade do modelo e garantir que não há leakage, overfitting, data drift (se aplicável)
+12. Se necessário pode criar células em markdown com explicaçoes teóricas, representaçoes matemáticas e afins. A ideia é que o projeto seja didático ao longo do próprio notebook.
 
 ## Formatação de Títulos (usar exatamente este padrão HTML em células Markdown)
 
@@ -185,3 +188,163 @@ Responder explicitamente, em texto corrido, às seguintes perguntas:
 - [ ] Gráficos com título e labels em todas as seções que geram visualização
 - [ ] Seção de Conclusões responde a todas as perguntas listadas explicitamente
 - [ ] Nenhuma métrica numérica inventada — apenas resultado de execução real ou placeholder explicitamente sinalizado
+
+--- 
+
+## Exemplo de Organização de Código
+
+Sempre deixar códigos comentados, identados e didáticos
+Se necessário, pode criar células de markdown para representar o que está sendo feito
+Sempre explique a matemática, mesmo que de forma resumida. Isso ajuda no entendimento
+
+Exemplo:
+
+# =========================================================
+# DEFINIÇÃO DA ARQUITETURA DA CNN
+# =========================================================
+
+# Define uma nova classe chamada DSANet
+# Toda rede neural no PyTorch herda de nn.Module
+class DSANet(nn.Module):
+
+    # =====================================================
+    # CONSTRUTOR DA REDE
+    # Aqui definimos TODAS as camadas da arquitetura
+    # =====================================================
+    def __init__(self):
+
+        # Inicializa a classe pai (nn.Module)
+        super(DSANet, self).__init__()
+
+        # =================================================
+        # BLOCO CONVOLUCIONAL
+        # Responsável por extrair padrões da imagem
+        # =================================================
+
+        # Primeira convolução
+        # Entrada: 3 canais RGB
+        # Saída: 32 feature maps
+        # Kernel: 3x3
+        # Stride: 1. O stride define quantos pixels o kernel "anda" a cada convolução. Stride = 1 → o filtro anda pixel por pixel.
+        # Padding: 1. O padding adiciona pixels extras (preenchidos com zeros) nas bordas da imagem para preservar as dimensões após a convolução. Com kernel 3x3 e padding 1, a saída terá a mesma altura e largura da entrada.
+        # Intuição: aprende padrões simples como bordas, linhas e contrastes
+        self.conv1 = nn.Conv2d(3, 32, 3, 1, padding = 1)
+
+        # Segunda convolução
+        # Entrada: 32 feature maps
+        # Saída: 64 feature maps
+        # Intuição: combina padrões anteriores para aprender texturas e formas
+        self.conv2 = nn.Conv2d(32, 64, 3, 1, padding = 1)
+
+        # Terceira convolução
+        # Entrada: 64 feature maps
+        # Saída: 128 feature maps
+        # Intuição: aprende estruturas mais abstratas e regiões relevantes
+        self.conv3 = nn.Conv2d(64, 128, 3, 1, padding = 1)
+
+        # =================================================
+        # REGULARIZAÇÃO
+        # Dropout ajuda a evitar overfitting
+        # =================================================
+
+        # Dropout de 25%
+        # Durante o treino: desliga aleatoriamente 25% dos neurônios
+        self.dropout1 = nn.Dropout(0.25)
+
+        # Dropout de 50%
+        # Regularização mais forte
+        self.dropout2 = nn.Dropout(0.5)
+
+        # =================================================
+        # CAMADAS DENSAS (MLP)
+        # Responsáveis pela classificação final
+        # =================================================
+
+        # Primeira camada totalmente conectada
+        # A entrada será muito menor após os poolings
+        self.fc1 = nn.Linear(8192, 512)
+
+        # Segunda camada densa
+        self.fc2 = nn.Linear(512, 128)
+
+        # Camada de saída
+        # 10 neurônios → 10 classes
+        self.fc3 = nn.Linear(128, 10)
+
+    # =====================================================
+    # FORWARD PASS
+    # Define como os dados percorrem a rede
+    # =====================================================
+    def forward(self, x):
+
+        # =================================================
+        # ETAPA 1 — PRIMEIRA CONVOLUÇÃO
+        # =================================================
+
+        # Convolução + ReLU
+        x = F.relu(self.conv1(x))
+
+        # Max Pooling
+        # Reduz altura e largura pela metade
+        x = F.max_pool2d(x, 2)
+
+        # =================================================
+        # ETAPA 2 — SEGUNDA CONVOLUÇÃO
+        # =================================================
+
+        # Convolução + ReLU
+        x = F.relu(self.conv2(x))
+
+        # Max Pooling
+        x = F.max_pool2d(x, 2)
+
+        # =================================================
+        # ETAPA 3 — TERCEIRA CONVOLUÇÃO
+        # =================================================
+
+        # Convolução + ReLU
+        x = F.relu(self.conv3(x))
+
+        # Max Pooling
+        x = F.max_pool2d(x, 2)
+
+        # =================================================
+        # ETAPA 4 — DROPOUT
+        # =================================================
+
+        # Desliga neurônios aleatoriamente
+        x = self.dropout1(x)
+
+        # =================================================
+        # ETAPA 5 — FLATTEN
+        # =================================================
+
+        # CNN → vetor 1D
+        x = torch.flatten(x, 1)
+
+        # =================================================
+        # ETAPA 6 — PRIMEIRA CAMADA DENSA
+        # =================================================
+
+        # Camada densa + ReLU
+        x = F.relu(self.fc1(x))
+
+        # Dropout
+        x = self.dropout2(x)
+
+        # =================================================
+        # ETAPA 7 — SEGUNDA CAMADA DENSA
+        # =================================================
+
+        # Camada densa + ReLU
+        x = F.relu(self.fc2(x))
+
+        # =================================================
+        # ETAPA 8 — CAMADA DE SAÍDA
+        # =================================================
+
+        # Produz logits para as classes
+        x = self.fc3(x)
+
+        # Converte logits em probabilidades
+        return F.log_softmax(x, dim = 1)
