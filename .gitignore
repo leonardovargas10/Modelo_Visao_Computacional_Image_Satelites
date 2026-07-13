@@ -12,3 +12,4 @@
 *.pt 
 __pycache__/
 data/
+reports/
