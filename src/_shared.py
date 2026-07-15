@@ -70,32 +70,15 @@ import shap
 from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping
 from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 from category_encoders import BinaryEncoder, CatBoostEncoder
-try:
-    from boruta import BorutaPy
-except ImportError:
-    BorutaPy = None
+from boruta import BorutaPy
+import skpro
+from skpro.distributions import Gamma, LogNormal, Normal
+from skpro.regression.residual import ResidualDouble
+import mapie
+from mapie.regression import SplitConformalRegressor
+from mapie.metrics.regression import regression_coverage_score
+from mapie.utils import train_conformalize_test_split
 
-try:
-    import skpro
-    from skpro.distributions import Gamma, LogNormal, Normal
-    from skpro.regression.residual import ResidualDouble
-except ImportError:
-    skpro = None
-    Gamma = LogNormal = Normal = ResidualDouble = None
-
-try:
-    import mapie
-    from mapie.regression import SplitConformalRegressor
-    try:
-        from mapie.metrics.regression import regression_coverage_score
-    except ImportError:
-        regression_coverage_score = None
-    try:
-        from mapie.utils import train_conformalize_test_split
-    except ImportError:
-        train_conformalize_test_split = None
-except ImportError:
-    mapie = None
-    SplitConformalRegressor = regression_coverage_score = train_conformalize_test_split = None
+mapie = None
 
 SEED = RANDOM_STATE = 42
