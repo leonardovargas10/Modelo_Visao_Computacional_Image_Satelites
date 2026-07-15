@@ -313,7 +313,8 @@ class SelecaoFeatures:
         ranking : DataFrame com o status final (confirmada/tentativa/rejeitada)
             e o ranking de cada feature.
         """
-        from boruta import BorutaPy
+        if BorutaPy is None:
+            raise ImportError('Instale Boruta para usar este método: pip install Boruta')
 
         if tipo == 'classificacao':
             base = dict(n_estimators=200, max_depth=7, class_weight='balanced', n_jobs=-1)
@@ -353,16 +354,16 @@ class SelecaoFeatures:
 
     @staticmethod
     def seleciona_estabilidade_temporal_psi(df, colunas, coluna_tempo, n_bins=10,
-                                             limite_psi=0.25, periodo_referencia=None,
+                                             limite_psi=0.1, periodo_referencia=None,
                                              criterio='psi_maximo'):
         """Filtra variáveis pela estabilidade da distribuição ao longo do
         tempo — uma feature preditiva no desenvolvimento mas instável nas
         safras seguintes é um risco de drift silencioso em produção, então
         aqui o corte é por estabilidade, não por poder discriminante.
 
-        Reaproveita `Analytics.calcula_psi_temporal` por trás: para cada
-        variável, calcula o PSI de cada período contra o período de
-        referência e resume num único critério de corte.
+        Para cada variável, calcula o PSI de cada período contra o período de
+        referência e resume num único critério de corte, sem depender de
+        outros módulos do pacote.
 
         Parameters
         ----------
@@ -370,8 +371,8 @@ class SelecaoFeatures:
         colunas : lista de variáveis candidatas a avaliar.
         coluna_tempo : coluna de período (safra/data/mês).
         limite_psi : acima disso a variável é considerada instável.
-        periodo_referencia : ver `Analytics.calcula_psi_temporal`; se None,
-            usa o primeiro período.
+        periodo_referencia : período usado como referência; se None, usa o
+            primeiro período em ordem crescente.
         criterio : {'psi_maximo', 'psi_medio'}
             'psi_maximo' -> reprova a variável se QUALQUER período isolado
                 estourar o limite (mais conservador — pega instabilidade
@@ -385,29 +386,59 @@ class SelecaoFeatures:
         resumo : DataFrame com o PSI por variável (máximo, médio e status)
             — ordenado da mais estável para a menos estável.
         """
-        from .analytics import Analytics
-
         if criterio not in {'psi_maximo', 'psi_medio'}:
             raise ValueError("criterio deve ser 'psi_maximo' ou 'psi_medio'.")
+        periodos = sorted(df[coluna_tempo].dropna().unique())
+        if len(periodos) < 2:
+            raise ValueError('São necessários ao menos dois períodos para calcular PSI temporal.')
+        referencia = periodos[0] if periodo_referencia is None else periodo_referencia
+        if referencia not in periodos:
+            raise ValueError('periodo_referencia não encontrado na coluna temporal.')
+
+        def calcula_psi_feature(coluna, tipo):
+            base = df.loc[df[coluna_tempo].eq(referencia), coluna].dropna()
+            if base.empty:
+                raise ValueError(f"A variável '{coluna}' não possui dados no período de referência.")
+            if tipo == 'numerica':
+                cortes = np.unique(np.percentile(base, np.linspace(0, 100, n_bins + 1))).astype(float)
+                if len(cortes) < 2:
+                    raise ValueError('Variável numérica constante ou sem cortes válidos.')
+                cortes[0], cortes[-1] = -np.inf, np.inf
+                base_faixas = pd.cut(base, bins=cortes, include_lowest=True)
+            else:
+                cortes = None
+                base_faixas = base.astype('object').fillna('__AUSENTE__')
+            dist_base = base_faixas.value_counts(normalize=True, sort=False)
+            valores_psi = []
+            for periodo in periodos:
+                if periodo == referencia:
+                    continue
+                atual = df.loc[df[coluna_tempo].eq(periodo), coluna]
+                atual_faixas = (pd.cut(atual, bins=cortes, include_lowest=True)
+                                if tipo == 'numerica'
+                                else atual.astype('object').fillna('__AUSENTE__'))
+                categorias = dist_base.index.union(atual_faixas.value_counts().index)
+                p = dist_base.reindex(categorias, fill_value=0).to_numpy(dtype=float)
+                q = atual_faixas.value_counts(normalize=True, sort=False).reindex(
+                    categorias, fill_value=0).to_numpy(dtype=float)
+                p = np.where(p == 0, 1e-4, p)
+                q = np.where(q == 0, 1e-4, q)
+                valores_psi.append(float(np.sum((q - p) * np.log(q / p))))
+            return valores_psi
+
         linhas = []
         for coluna in colunas:
             try:
-                resumo_psi, _ = Analytics.calcula_psi_temporal(
-                    df, coluna_variavel=coluna, coluna_tempo=coluna_tempo,
-                    tipo='numerica', n_bins=n_bins, periodo_referencia=periodo_referencia,
-                )
+                valores_psi = calcula_psi_feature(coluna, 'numerica')
             except (ValueError, TypeError):
                 # Variável não numérica ou incompatível com discretização -> trata como categórica
-                resumo_psi, _ = Analytics.calcula_psi_temporal(
-                    df, coluna_variavel=coluna, coluna_tempo=coluna_tempo,
-                    tipo='categorica', periodo_referencia=periodo_referencia,
-                )
+                valores_psi = calcula_psi_feature(coluna, 'categorica')
 
             linhas.append({
                 'feature': coluna,
-                'psi_maximo': resumo_psi['psi'].max(),
-                'psi_medio': resumo_psi['psi'].mean(),
-                'n_periodos': len(resumo_psi),
+                'psi_maximo': float(np.max(valores_psi)),
+                'psi_medio': float(np.mean(valores_psi)),
+                'n_periodos': len(valores_psi),
             })
 
         resumo = pd.DataFrame(linhas)

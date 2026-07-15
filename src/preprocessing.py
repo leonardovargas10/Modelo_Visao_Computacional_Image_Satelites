@@ -169,7 +169,7 @@ class PreProcessamento:
             'balanced'      -> peso = n_negativos / n_positivos (o mesmo
                                 critério do `class_weight='balanced'` do
                                 sklearn, mas explícito e reaproveitável fora
-                                dele, ex.: em XGBoost/LightGBM).
+                                dele, por exemplo em LightGBM).
             'sqrt_balanced' -> raiz do peso balanceado, para suavizar casos
                                 de desbalanceamento extremo (ex.: fraude,
                                 onde o peso 'balanced' puro tende a
@@ -177,9 +177,9 @@ class PreProcessamento:
                                 positivos).
         formato : {'scale_pos_weight', 'dict', 'sklearn'}
             'scale_pos_weight' -> retorna só o float (uso direto em
-                                   XGBoost/LightGBM: `scale_pos_weight=peso`).
+                                   LightGBM: `scale_pos_weight=peso`).
             'dict'             -> retorna {0: 1, 1: peso} (uso em
-                                   `class_weight` de sklearn/XGBoost/LightGBM
+                                   `class_weight` de sklearn/LightGBM
                                    no formato dict).
             'sklearn'          -> retorna {0: peso_0, 1: peso_1} calculado
                                    via `sklearn.utils.class_weight.compute_class_weight`,

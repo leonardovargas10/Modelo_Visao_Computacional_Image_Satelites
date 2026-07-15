@@ -1233,7 +1233,7 @@ class Analytics:
     def plot_shap_beeswarm(modelo_pipeline, X, titulo="SHAP Beeswarm",
                            etapa_modelo=None, etapa_preprocessamento=None, max_display=30):
         """
-        Plota apenas o gráfico Beeswarm de valores SHAP para um modelo XGBoost dentro de um Pipeline sklearn.
+        Plota um gráfico Beeswarm de valores SHAP para modelos de árvore, inclusive em Pipeline sklearn.
         """
         if hasattr(modelo_pipeline, 'named_steps'):
             etapas = modelo_pipeline.named_steps
@@ -1628,7 +1628,6 @@ class Analytics:
                       label=f'Mediana: {median_val:.2f}')
             
             # Adicionar KDE (Kernel Density Estimation)
-            from scipy.stats import gaussian_kde
             try:
                 kde = gaussian_kde(data_clean)
                 x_range = np.linspace(data_clean.min(), data_clean.max(), 1000)
@@ -1803,7 +1802,6 @@ class Analytics:
         # Plotar KDE para cada conjunto
         for data, label, color in datasets:
             if len(data) > 0:
-                from scipy.stats import gaussian_kde
                 try:
                     kde = gaussian_kde(data)
                     x_range = np.linspace(

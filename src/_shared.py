@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import scipy.stats as stats
+from scipy.stats import gaussian_kde
 import statsmodels
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
@@ -35,23 +36,12 @@ from matplotlib.patches import Patch, Polygon
 from matplotlib.ticker import FuncFormatter
 from numpy import interp
 from scipy.stats import *
-# O wildcard do SciPy também exporta um nome legado ``stats``; restaura o
-# módulo público para chamadas como ``stats.probplot`` e ``stats.mannwhitneyu``.
 import scipy.stats as stats
 from statsmodels.stats.diagnostic import lilliefors
 from statsmodels.stats.weightstats import ztest
-
-try:
-    from IPython.display import Image, display
-except ImportError:  # IPython não é obrigatório para uso como biblioteca.
-    Image = None
-    display = builtins.print
-
-try:
-    from tabulate import tabulate
-except ImportError:  # Usado apenas para apresentação tabular em notebooks.
-    tabulate = None
-
+from statsmodels.sandbox.regression.gmm import IV2SLS
+from IPython.display import Image, display
+from tabulate import tabulate
 from sklearn.base import clone
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
@@ -64,8 +54,6 @@ from sklearn.inspection import permutation_importance
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import *
-# Necessário antes de importar HalvingGridSearchCV/HalvingRandomSearchCV,
-# que fazem parte do __all__ de sklearn.model_selection em algumas versões.
 from sklearn.experimental import enable_halving_search_cv  # noqa: F401
 from sklearn.model_selection import *
 from sklearn.neighbors import NearestNeighbors
@@ -80,18 +68,13 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.stattools import adfuller, kpss
 import shap
 from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping
-from xgboost import XGBClassifier
 from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 from category_encoders import BinaryEncoder, CatBoostEncoder
-
-# Dependência opcional usada somente quando a busca Bayesiana for solicitada.
 try:
-    from skopt import BayesSearchCV
+    from boruta import BorutaPy
 except ImportError:
-    BayesSearchCV = None
+    BorutaPy = None
 
-# Regressão probabilística e conformal. Permanecem opcionais para que métricas,
-# visualizações e modelos clássicos possam ser usados sem essas instalações.
 try:
     import skpro
     from skpro.distributions import Gamma, LogNormal, Normal

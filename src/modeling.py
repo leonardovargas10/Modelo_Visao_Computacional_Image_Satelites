@@ -35,32 +35,37 @@ class Modelagem:
     @staticmethod
     def Classificador(classificador, x_train, y_train, x_test, y_test,
                        class_weight=None, parametros=None, preprocessador=None):
-        """Treina um classificador geral e devolve modelo, classes e probabilidades.
-        Modelos suportados: Regressão Logística, Random Forest, LightGBM e XGBoost."""
+        """Treina Regressão Logística, Random Forest ou LightGBM."""
         nome = str(classificador).strip().lower().replace("_", " ")
         params = dict(parametros or {})
         if nome in {"regressão logística", "regressao logistica", "logistic regression", "logistica"}:
-            base = dict(max_iter=2000, random_state=42,
+            base = dict(C=1.0, penalty='l2', solver='lbfgs', tol=1e-4,
+                        max_iter=2000, random_state=42,
                         class_weight="balanced" if class_weight is None else {0: 1, 1: class_weight})
             base.update(params); modelo = LogisticRegression(**base)
         elif nome in {"random forest", "randomforest"}:
-            base = dict(n_estimators=300, random_state=42, n_jobs=-1,
+            base = dict(n_estimators=300, criterion='gini', max_depth=None,
+                        min_samples_split=2, min_samples_leaf=1,
+                        max_features='sqrt', bootstrap=True,
+                        random_state=42, n_jobs=-1,
                         class_weight="balanced" if class_weight is None else {0: 1, 1: class_weight})
             base.update(params); modelo = RandomForestClassifier(**base)
         elif nome in {"lightgbm", "lgbm"}:
             if LGBMClassifier is None: raise ImportError("Instale lightgbm para usar este classificador.")
-            base = dict(objective="binary", n_estimators=300, learning_rate=0.03,
-                        random_state=42, n_jobs=-1, verbosity=-1)
+            base = dict(objective="binary", boosting_type='gbdt',
+                        n_estimators=300, learning_rate=0.03,
+                        num_leaves=31, max_depth=-1, min_child_samples=20,
+                        min_child_weight=1e-3, min_split_gain=0.0,
+                        subsample=0.8, subsample_freq=1, colsample_bytree=0.8,
+                        feature_fraction_bynode=1.0,
+                        reg_alpha=0.0, reg_lambda=0.0, max_bin=255,
+                        max_delta_step=0.0, path_smooth=0.0, extra_trees=False,
+                        deterministic=True, force_col_wise=True,
+                        importance_type='gain', random_state=42, n_jobs=-1, verbosity=-1)
             if class_weight is not None: base["scale_pos_weight"] = class_weight
             base.update(params); modelo = LGBMClassifier(**base)
-        elif nome in {"xgboost", "xgb"}:
-            if XGBClassifier is None: raise ImportError("Instale xgboost para usar este classificador.")
-            base = dict(n_estimators=300, learning_rate=0.03, max_depth=6,
-                        objective="binary:logistic", eval_metric="logloss", random_state=42, n_jobs=-1)
-            if class_weight is not None: base["scale_pos_weight"] = class_weight
-            base.update(params); modelo = XGBClassifier(**base)
         else:
-            raise ValueError("Use Regressão Logística, Random Forest, LightGBM ou XGBoost.")
+            raise ValueError("Use Regressão Logística, Random Forest ou LightGBM.")
         if preprocessador is not None:
             modelo = Pipeline([("preprocessamento", clone(preprocessador)), ("modelo", modelo)])
         y_train_array = np.asarray(y_train).ravel(); y_test_array = np.asarray(y_test).ravel()
@@ -72,37 +77,74 @@ class Modelagem:
     # Treino multi-loss — REGRESSOR (espelha o Classificador)
     # ------------------------------------------------------------------ #
     @staticmethod
-    def Regressor(loss_function, x_train, y_train, x_test, y_test, parametros=None):
-        """Treina um regressor LGBM trocando apenas a função de perda —
-        equivalente do `Classificador` para problemas de regressão."""
+    def Regressor(regressor, x_train, y_train, x_test, y_test, parametros=None,
+                  loss_function='RMSE', preprocessador=None):
+        """Treina Regressão Linear, Random Forest ou LightGBM.
+
+        Por compatibilidade, ``Regressor('RMSE', ...)`` e as demais losses
+        históricas continuam sendo interpretadas como LightGBM.
+        """
         cols = list(x_train.columns)
         x_train, x_test = x_train[cols], x_test[cols]
+        nome = str(regressor).strip().lower().replace('_', ' ')
+        losses = {'mae': 'MAE', 'rmse': 'RMSE', 'huber': 'Huber',
+                  'rmsle': 'RMSLE', 'gamma': 'Gamma'}
+        if nome in losses:
+            loss_function = losses[nome]
+            nome = 'lightgbm'
+        loss_function = str(loss_function).strip().upper()
 
-        base_params = dict(
-            verbosity=-1, random_state=42, boosting_type='gbdt',
-            importance_type='gain', n_estimators=300, max_depth=7,
-            learning_rate=0.05, max_bin=255,
-        )
-        base_params.update(parametros or {})
+        if nome in {'linear', 'regressao linear', 'regressão linear', 'linear regression'}:
+            base = dict(fit_intercept=True, copy_X=True, n_jobs=-1, positive=False)
+            base.update(parametros or {})
+            model = LinearRegression(**base)
+        elif nome in {'random forest', 'randomforest', 'random forest regressor'}:
+            base = dict(
+                n_estimators=500, criterion='squared_error', max_depth=None,
+                min_samples_split=2, min_samples_leaf=1, max_features=1.0,
+                max_leaf_nodes=None, min_impurity_decrease=0.0,
+                bootstrap=True, max_samples=None, random_state=42, n_jobs=-1,
+            )
+            base.update(parametros or {})
+            model = RandomForestRegressor(**base)
+        elif nome not in {'lightgbm', 'lgbm'}:
+            raise ValueError("Use Regressão Linear, Random Forest ou LightGBM.")
+        else:
+            if LGBMRegressor is None:
+                raise ImportError('Instale lightgbm para usar este regressor.')
 
-        models = {
-            "MAE": LGBMRegressor(objective="regression_l1", metric="l1", **base_params),
-            "RMSE": LGBMRegressor(objective="regression", metric="l2", **base_params),
-            "Huber": LGBMRegressor(objective="huber", metric="l1", huber_delta=1.0, **base_params),
-            "RMSLE": LGBMRegressor(objective="regression", metric="l2", **base_params),
-            "Gamma": LGBMRegressor(objective="gamma", metric="gamma", **base_params),
-        }
-
-        if loss_function not in models:
-            raise ValueError(f"Loss function '{loss_function}' não suportada.")
-        model = models[loss_function]
+            base_params = dict(
+                verbosity=-1, random_state=42, boosting_type='gbdt',
+                importance_type='gain', n_estimators=300, learning_rate=0.05,
+                num_leaves=31, max_depth=-1, min_child_samples=20,
+                min_child_weight=1e-3, min_split_gain=0.0,
+                subsample=0.8, subsample_freq=1, colsample_bytree=0.8,
+                feature_fraction_bynode=1.0,
+                reg_alpha=0.0, reg_lambda=0.0, max_bin=255,
+                max_delta_step=0.0, path_smooth=0.0, extra_trees=False,
+                deterministic=True, force_col_wise=True, n_jobs=-1,
+            )
+            base_params.update(parametros or {})
+            configuracoes = {
+                'MAE': dict(objective='regression_l1', metric='l1'),
+                'RMSE': dict(objective='regression', metric='l2'),
+                'HUBER': dict(objective='huber', metric='l1'),
+                'RMSLE': dict(objective='regression', metric='l2'),
+                'GAMMA': dict(objective='gamma', metric='gamma'),
+            }
+            if loss_function not in configuracoes:
+                raise ValueError(f"Loss function '{loss_function}' não suportada.")
+            config = configuracoes[loss_function]
+            model = LGBMRegressor(**config, **base_params)
 
         y_train_array = np.asarray(y_train).ravel()
-        if loss_function == "RMSLE" and np.any(y_train_array < 0):
+        if nome == 'lightgbm' and loss_function == "RMSLE" and np.any(y_train_array < 0):
             raise ValueError("RMSLE exige target não negativo.")
-        if loss_function == "Gamma" and np.any(y_train_array <= 0):
+        if nome == 'lightgbm' and loss_function == "GAMMA" and np.any(y_train_array <= 0):
             raise ValueError("Regressão Gamma exige target estritamente positivo.")
-        if loss_function == "RMSLE":
+        if preprocessador is not None:
+            model = Pipeline([('preprocessamento', clone(preprocessador)), ('modelo', model)])
+        if nome == 'lightgbm' and loss_function == "RMSLE":
             y_train_transformed = np.log1p(y_train)
             model.fit(x_train, y_train_transformed)
             y_pred_train = np.maximum(np.expm1(model.predict(x_train)), 0)
@@ -119,7 +161,9 @@ class Modelagem:
     # (agora com retorno padronizado, igual ao da regressão)
     # ------------------------------------------------------------------ #
     @staticmethod
-    def otimizacao_hyperopt_classificacao(x_train, y_train, x_valid, y_valid, max_evals=20):
+    def otimizacao_hyperopt_classificacao(x_train, y_train, x_valid, y_valid,
+                                           max_evals=30, class_weight=None,
+                                           parametros_fixos=None):
         """Otimiza um LGBMClassifier via Hyperopt maximizando PR-AUC de
         validação com penalização de overfitting (gap treino-validação).
 
@@ -130,26 +174,39 @@ class Modelagem:
         — mesmo formato de `otimizacao_hyperopt_regressao`.
         """
         espaco = {
-            "n_estimators": hp.quniform("n_estimators", 100, 350, 25),
-            "learning_rate": hp.loguniform("learning_rate", np.log(0.015), np.log(0.08)),
-            "num_leaves": hp.quniform("num_leaves", 7, 21, 2),
-            "max_depth": hp.quniform("max_depth", 3, 5, 1),
-            "min_child_samples": hp.quniform("min_child_samples", 150, 600, 50),
-            "subsample": hp.uniform("subsample", 0.65, 1),
-            "colsample_bytree": hp.uniform("colsample_bytree", 0.6, 1),
-            "reg_alpha": hp.loguniform("reg_alpha", np.log(0.1), np.log(20)),
-            "reg_lambda": hp.loguniform("reg_lambda", np.log(0.5), np.log(30)),
+            "n_estimators": hp.quniform("n_estimators", 150, 1000, 25),
+            "learning_rate": hp.loguniform("learning_rate", np.log(0.01), np.log(0.15)),
+            "num_leaves": hp.quniform("num_leaves", 15, 127, 2),
+            "max_depth": hp.quniform("max_depth", 3, 12, 1),
+            "min_child_samples": hp.quniform("min_child_samples", 10, 200, 5),
+            "min_child_weight": hp.loguniform("min_child_weight", np.log(1e-3), np.log(10)),
+            "min_split_gain": hp.uniform("min_split_gain", 0, 2),
+            "subsample": hp.uniform("subsample", 0.6, 1),
+            "colsample_bytree": hp.uniform("colsample_bytree", 0.5, 1),
+            "feature_fraction_bynode": hp.uniform("feature_fraction_bynode", 0.5, 1),
+            "reg_alpha": hp.loguniform("reg_alpha", np.log(1e-4), np.log(20)),
+            "reg_lambda": hp.loguniform("reg_lambda", np.log(1e-4), np.log(30)),
+            "max_bin": hp.quniform("max_bin", 63, 511, 16),
+            "max_delta_step": hp.uniform("max_delta_step", 0, 10),
+            "path_smooth": hp.uniform("path_smooth", 0, 10),
+            "extra_trees": hp.quniform("extra_trees", 0, 1, 1),
         }
-        inteiros = ["n_estimators", "num_leaves", "max_depth", "min_child_samples"]
+        inteiros = ["n_estimators", "num_leaves", "max_depth", "min_child_samples", "max_bin"]
 
         def converte(parametros):
             parametros = parametros.copy()
             for coluna in inteiros:
                 parametros[coluna] = int(parametros[coluna])
+            if 'extra_trees' in parametros:
+                parametros['extra_trees'] = bool(int(parametros['extra_trees']))
             return parametros
 
         def constroi_modelo(parametros):
-            base = dict(objective="binary", random_state=42, n_jobs=-1, verbosity=-1)
+            base = dict(objective="binary", boosting_type='gbdt', subsample_freq=1,
+                        importance_type='gain', random_state=42, n_jobs=-1, verbosity=-1)
+            if class_weight is not None:
+                base['scale_pos_weight'] = class_weight
+            base.update(parametros_fixos or {})
             base.update(parametros)
             return LGBMClassifier(**base)
 
@@ -183,53 +240,94 @@ class Modelagem:
     # Otimização Hyperopt — REGRESSOR
     # ------------------------------------------------------------------ #
     @staticmethod
-    def otimizacao_hyperopt_regressao(x_train, y_train, x_valid, y_valid, max_evals):
+    def otimizacao_hyperopt_regressao(x_train, y_train, x_valid, y_valid,
+                                      max_evals=30, metrica='rmse',
+                                      objective='regression', parametros_fixos=None):
         """Otimiza no treino e usa exclusivamente uma amostra de validação externa.
 
         Não passe o teste final em ``x_valid``/``y_valid``; ele deve permanecer
         intocado até a avaliação definitiva.
         """
+        metrica = str(metrica).lower()
+        if metrica not in {'rmse', 'mae', 'rmsle'}:
+            raise ValueError("metrica deve ser 'rmse', 'mae' ou 'rmsle'.")
+        y_otimizacao = np.asarray(y_train)
+        if objective == 'gamma' and np.any(y_otimizacao <= 0):
+            raise ValueError('Objetivo Gamma exige target estritamente positivo.')
+        if metrica == 'rmsle' and np.any(y_otimizacao < 0):
+            raise ValueError('RMSLE exige target não negativo.')
         search_space = {
-            'n_estimators': hp.choice('n_estimators', [700, 800, 900, 1000]),
-            'max_depth': hp.choice('max_depth', [10, 11, 12]),
-            'learning_rate': hp.uniform('learning_rate', 0.01, 0.05),
-            'max_bin': hp.choice('max_bin', [64, 128, 255]),
-            'reg_alpha': hp.uniform('reg_alpha', 0, 1),
-            'reg_lambda': hp.uniform('reg_lambda', 0, 1),
-            'min_split_gain': hp.uniform('min_split_gain', 0, 10),
+            'n_estimators': hp.quniform('reg_n_estimators', 150, 1200, 25),
+            'max_depth': hp.quniform('reg_max_depth', 3, 15, 1),
+            'learning_rate': hp.loguniform('reg_learning_rate', np.log(0.01), np.log(0.15)),
+            'max_bin': hp.quniform('reg_max_bin', 63, 511, 16),
+            'reg_alpha': hp.loguniform('reg_alpha_search', np.log(1e-4), np.log(20)),
+            'reg_lambda': hp.loguniform('reg_lambda_search', np.log(1e-4), np.log(30)),
+            'min_split_gain': hp.uniform('reg_min_split_gain', 0, 2),
             'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
-            'subsample': hp.uniform('subsample', 0.5, 1),
-            'num_leaves': hp.choice('num_leaves', [30, 35, 40, 45, 50]),
-            'min_data_in_leaf': hp.choice('min_data_in_leaf', [300, 400, 500]),
-            'min_sum_hessian_in_leaf': hp.uniform('min_sum_hessian_in_leaf', 0.001, 0.005),
+            'feature_fraction_bynode': hp.uniform('reg_feature_fraction_bynode', 0.5, 1),
+            'subsample': hp.uniform('reg_subsample', 0.6, 1),
+            'num_leaves': hp.quniform('reg_num_leaves', 15, 127, 2),
+            'min_child_samples': hp.quniform('reg_min_child_samples', 10, 200, 5),
+            'min_child_weight': hp.loguniform('reg_min_child_weight', np.log(1e-3), np.log(10)),
+            'max_delta_step': hp.uniform('reg_max_delta_step', 0, 10),
+            'path_smooth': hp.uniform('reg_path_smooth', 0, 10),
+            'extra_trees': hp.quniform('reg_extra_trees', 0, 1, 1),
         }
 
-        def objective(params):
+        inteiros = {'n_estimators', 'max_depth', 'max_bin', 'num_leaves', 'min_child_samples'}
+
+        def converte(params):
+            convertido = params.copy()
+            for nome in inteiros:
+                convertido[nome] = int(convertido[nome])
+            if 'extra_trees' in convertido:
+                convertido['extra_trees'] = bool(int(convertido['extra_trees']))
+            return convertido
+
+        def calcula_erro(y_real, pred):
+            if metrica == 'mae':
+                return mean_absolute_error(y_real, pred)
+            if metrica == 'rmsle':
+                return np.sqrt(mean_squared_log_error(y_real, np.maximum(pred, 0)))
+            return np.sqrt(mean_squared_error(y_real, pred))
+
+        def funcao_objetivo(params):
+            params = converte(params)
             X_tr, X_val, y_tr, y_val = train_test_split(x_train, y_train, test_size=0.2, random_state=42)
-            model = LGBMRegressor(
+            base = dict(
                 verbosity=-1, random_state=42, boosting_type='gbdt', importance_type='gain',
-                objective='gamma', metric='rmse', **params,
+                objective=objective, subsample_freq=1, n_jobs=-1,
             )
+            base.update(parametros_fixos or {}); base.update(params)
+            model = LGBMRegressor(**base)
             model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], eval_metric="rmse",
                       callbacks=[early_stopping(stopping_rounds=20, verbose=False)])
-            preds = np.maximum(model.predict(X_val), 1e-6)
-            score = np.sqrt(mean_squared_log_error(y_val, preds))
+            preds = model.predict(X_val)
+            score = calcula_erro(y_val, preds)
             return {'loss': score, 'status': STATUS_OK}
 
         trials = Trials()
-        best = fmin(fn=objective, space=search_space, algo=tpe.suggest,
+        best = fmin(fn=funcao_objetivo, space=search_space, algo=tpe.suggest,
                     max_evals=max_evals, trials=trials, rstate=np.random.default_rng(42))
-
-        best['n_estimators'] = [700, 800, 900, 1000][best['n_estimators']]
-        best['max_depth'] = [10, 11, 12][best['max_depth']]
-        best['max_bin'] = [64, 128, 255][best['max_bin']]
-        best['num_leaves'] = [30, 35, 40, 45, 50][best['num_leaves']]
-        best['min_data_in_leaf'] = [300, 400, 500][best['min_data_in_leaf']]
-
-        final_model = LGBMRegressor(
+        best = converte({
+            'n_estimators': best['reg_n_estimators'], 'max_depth': best['reg_max_depth'],
+            'learning_rate': best['reg_learning_rate'], 'max_bin': best['reg_max_bin'],
+            'reg_alpha': best['reg_alpha_search'], 'reg_lambda': best['reg_lambda_search'],
+            'min_split_gain': best['reg_min_split_gain'], 'colsample_bytree': best['colsample_bytree'],
+            'feature_fraction_bynode': best['reg_feature_fraction_bynode'],
+            'subsample': best['reg_subsample'], 'num_leaves': best['reg_num_leaves'],
+            'min_child_samples': best['reg_min_child_samples'],
+            'min_child_weight': best['reg_min_child_weight'],
+            'max_delta_step': best['reg_max_delta_step'], 'path_smooth': best['reg_path_smooth'],
+            'extra_trees': best['reg_extra_trees'],
+        })
+        base_final = dict(
             verbosity=-1, random_state=42, boosting_type='gbdt', importance_type='gain',
-            objective='gamma', metric='rmse', **best,
+            objective=objective, subsample_freq=1, n_jobs=-1,
         )
+        base_final.update(parametros_fixos or {}); base_final.update(best)
+        final_model = LGBMRegressor(**base_final)
         final_model.fit(x_train, y_train, eval_set=[(x_valid, y_valid)], eval_metric='rmse',
                          callbacks=[early_stopping(stopping_rounds=20, verbose=False)])
 
@@ -451,8 +549,6 @@ class Modelagem:
             # ===============================
             # RESIDUAL DOUBLE (API ANTIGA)
             # ===============================
-            from skpro.regression.residual import ResidualDouble
-
             calibrador_skpro = ResidualDouble(modelo_otimizado)
             calibrador_skpro.fit(X=x_train, y=y_train[target].values)
             Modelagem.salvar_modelo_pickle(calibrador_skpro, caminho_modelo)
@@ -564,7 +660,6 @@ class Modelagem:
 
     @staticmethod
     def diferencas_em_diferencas(df, outcome, treatment, post, covariates=None):
-        import statsmodels.formula.api as smf
         controles = " + " + " + ".join(covariates) if covariates else ""
         modelo = smf.ols(f"{outcome} ~ {treatment} + {post} + {treatment}:{post}{controles}", data=df).fit(cov_type="HC1")
         termo = f"{treatment}:{post}"
@@ -574,7 +669,6 @@ class Modelagem:
 
     @staticmethod
     def regressao_descontinua(df, outcome, running, cutoff, bandwidth=None, polynomial_order=1):
-        import statsmodels.formula.api as smf
         base = df[[outcome, running]].dropna().copy()
         base["running_centered"] = base[running] - cutoff
         if bandwidth is not None:
@@ -589,8 +683,6 @@ class Modelagem:
 
     @staticmethod
     def variavel_instrumental(df, outcome, treatment, instrument, covariates=None):
-        import statsmodels.api as sm
-        from statsmodels.sandbox.regression.gmm import IV2SLS
         controles = covariates or []
         base = df[[outcome, treatment, instrument, *controles]].dropna().copy()
         exog = sm.add_constant(base[[treatment, *controles]], has_constant="add")
