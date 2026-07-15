@@ -1,6 +1,16 @@
 """Métodos generalistas selecionados do arquivo original."""
 from ._shared import *
 
+@dataclass
+class CausalResult:
+    """Resultado padronizado das estimativas causais."""
+    estimate: float
+    std_error: float
+    p_value: float
+    confidence_interval: tuple
+    model: object
+    diagnostics: dict
+
 class Modelagem:
 
     # ------------------------------------------------------------------ #
@@ -87,6 +97,11 @@ class Modelagem:
             raise ValueError(f"Loss function '{loss_function}' não suportada.")
         model = models[loss_function]
 
+        y_train_array = np.asarray(y_train).ravel()
+        if loss_function == "RMSLE" and np.any(y_train_array < 0):
+            raise ValueError("RMSLE exige target não negativo.")
+        if loss_function == "Gamma" and np.any(y_train_array <= 0):
+            raise ValueError("Regressão Gamma exige target estritamente positivo.")
         if loss_function == "RMSLE":
             y_train_transformed = np.log1p(y_train)
             model.fit(x_train, y_train_transformed)
@@ -168,7 +183,12 @@ class Modelagem:
     # Otimização Hyperopt — REGRESSOR
     # ------------------------------------------------------------------ #
     @staticmethod
-    def otimizacao_hyperopt_regressao(x_train, y_train, x_test, y_test, max_evals):
+    def otimizacao_hyperopt_regressao(x_train, y_train, x_valid, y_valid, max_evals):
+        """Otimiza no treino e usa exclusivamente uma amostra de validação externa.
+
+        Não passe o teste final em ``x_valid``/``y_valid``; ele deve permanecer
+        intocado até a avaliação definitiva.
+        """
         search_space = {
             'n_estimators': hp.choice('n_estimators', [700, 800, 900, 1000]),
             'max_depth': hp.choice('max_depth', [10, 11, 12]),
@@ -210,10 +230,10 @@ class Modelagem:
             verbosity=-1, random_state=42, boosting_type='gbdt', importance_type='gain',
             objective='gamma', metric='rmse', **best,
         )
-        final_model.fit(x_train, y_train, eval_set=[(x_test, y_test)], eval_metric='rmse',
+        final_model.fit(x_train, y_train, eval_set=[(x_valid, y_valid)], eval_metric='rmse',
                          callbacks=[early_stopping(stopping_rounds=20, verbose=False)])
 
-        y_pred_train, y_pred_test = final_model.predict(x_train), final_model.predict(x_test)
+        y_pred_train, y_pred_test = final_model.predict(x_train), final_model.predict(x_valid)
         hiperparametros = pd.DataFrame([best])
 
         return final_model, y_pred_train, y_pred_test, hiperparametros, trials
@@ -248,13 +268,105 @@ class Modelagem:
         y_calibracao = np.asarray(y_calibracao).ravel()
         y_pred_calibracao = np.asarray(modelo.predict(x_calibracao)).ravel()
         residuos_absolutos = np.abs(y_calibracao - y_pred_calibracao)
-        margem = float(np.quantile(residuos_absolutos, 1 - alpha))
+        if not 0 < alpha < 1:
+            raise ValueError('alpha deve estar entre 0 e 1.')
+        n = len(residuos_absolutos)
+        if n == 0:
+            raise ValueError('A amostra de calibração está vazia.')
+        quantil = min(np.ceil((n + 1) * (1 - alpha)) / n, 1.0)
+        margem = float(np.quantile(residuos_absolutos, quantil, method='higher'))
 
         def predict_interval(x):
             y_pred = np.asarray(modelo.predict(x)).ravel()
             return y_pred, y_pred - margem, y_pred + margem
 
         return {"margem": margem, "predict_interval": predict_interval}
+
+    @staticmethod
+    def treinar_skpro_residual_double(modelo_base, x_train, y_train,
+                                      modelo_residuos=None, distr_type='Normal',
+                                      cv=None, **parametros):
+        """Treina regressão probabilística SKPRO pelo método ResidualDouble."""
+        if ResidualDouble is None:
+            raise ImportError('Instale skpro para usar ResidualDouble: pip install skpro')
+        modelo = ResidualDouble(
+            estimator=clone(modelo_base),
+            estimator_resid=clone(modelo_residuos) if modelo_residuos is not None else None,
+            distr_type=distr_type,
+            cv=cv,
+            **parametros,
+        )
+        modelo.fit(X=x_train, y=np.asarray(y_train).ravel())
+        return modelo
+
+    @staticmethod
+    def predizer_intervalos_skpro(modelo, x, cobertura=0.90):
+        """Retorna predição e intervalo de uma distribuição preditiva SKPRO."""
+        if not 0 < cobertura < 1:
+            raise ValueError('cobertura deve estar entre 0 e 1.')
+        distribuicao = modelo.predict_proba(x)
+        alpha = 1 - cobertura
+        predicao = np.asarray(distribuicao.mean()).ravel()
+        inferior = np.asarray(distribuicao.ppf(alpha / 2)).ravel()
+        superior = np.asarray(distribuicao.ppf(1 - alpha / 2)).ravel()
+        return pd.DataFrame({
+            'y_pred': predicao,
+            'ic_inferior': inferior,
+            'ic_superior': superior,
+            'cobertura_nominal': cobertura,
+        }, index=getattr(x, 'index', None))
+
+    @staticmethod
+    def treinar_mapie_split_conformal(modelo_base, x_train, y_train,
+                                      x_calibracao, y_calibracao,
+                                      cobertura=0.90, **parametros):
+        """Treina e calibra um SplitConformalRegressor do MAPIE.
+
+        A separação treino/calibração deve ser feita antes da chamada para
+        impedir vazamento. A função aceita as APIs recentes do MAPIE.
+        """
+        if SplitConformalRegressor is None:
+            raise ImportError('Instale MAPIE para usar regressão conformal: pip install mapie')
+        if not 0 < cobertura < 1:
+            raise ValueError('cobertura deve estar entre 0 e 1.')
+        y_treino = np.asarray(y_train).ravel()
+        y_cal = np.asarray(y_calibracao).ravel()
+        try:
+            conformal = SplitConformalRegressor(
+                estimator=clone(modelo_base), confidence_level=cobertura,
+                prefit=False, **parametros,
+            )
+            conformal.fit(x_train, y_treino)
+            conformal.conformalize(x_calibracao, y_cal)
+        except TypeError:
+            # Compatibilidade com versões que não expõem ``prefit``.
+            conformal = SplitConformalRegressor(
+                estimator=clone(modelo_base), confidence_level=cobertura,
+                **parametros,
+            )
+            if hasattr(conformal, 'fit'):
+                conformal.fit(x_train, y_treino)
+            conformal.conformalize(x_calibracao, y_cal)
+        return conformal
+
+    @staticmethod
+    def predizer_intervalos_mapie(modelo, x, cobertura=0.90):
+        """Normaliza a saída do MAPIE para y_pred/ic_inferior/ic_superior."""
+        resultado = modelo.predict_interval(x)
+        if not isinstance(resultado, tuple) or len(resultado) != 2:
+            raise TypeError('A versão do MAPIE retornou um formato de intervalo não reconhecido.')
+        predicao, intervalos = resultado
+        intervalos = np.asarray(intervalos)
+        if intervalos.ndim == 3:
+            intervalos = intervalos[:, :, 0]
+        if intervalos.ndim != 2 or intervalos.shape[1] != 2:
+            raise ValueError('Esperava intervalos com formato (n_amostras, 2).')
+        return pd.DataFrame({
+            'y_pred': np.asarray(predicao).ravel(),
+            'ic_inferior': intervalos[:, 0],
+            'ic_superior': intervalos[:, 1],
+            'cobertura_nominal': cobertura,
+        }, index=getattr(x, 'index', None))
 
     # ------------------------------------------------------------------ #
     # Predição utilitária — CLASSIFICADOR x REGRESSOR
@@ -312,6 +424,12 @@ class Modelagem:
         resultado = cross_validate(modelo, x, np.asarray(y).ravel(), cv=cv,
                                     scoring=metricas, n_jobs=n_jobs, return_train_score=True)
         detalhe = pd.DataFrame(resultado)
+        # Scorers de erro do sklearn são negativos por convenção; expomos
+        # MAE/RMSE positivos para evitar relatórios contraintuitivos.
+        for nome, scorer in metricas.items():
+            if isinstance(scorer, str) and scorer.startswith('neg_'):
+                detalhe[f'train_{nome}'] = -detalhe[f'train_{nome}']
+                detalhe[f'test_{nome}'] = -detalhe[f'test_{nome}']
         resumo = pd.DataFrame({
             "Metrica": list(metricas),
             "Treino_media": [detalhe[f"train_{m}"].mean() for m in metricas],
@@ -337,10 +455,10 @@ class Modelagem:
 
             calibrador_skpro = ResidualDouble(modelo_otimizado)
             calibrador_skpro.fit(X=x_train, y=y_train[target].values)
-            salvar_objeto(calibrador_skpro, caminho_modelo)
+            Modelagem.salvar_modelo_pickle(calibrador_skpro, caminho_modelo)
 
         else:
-            calibrador_skpro = carregar_objeto(caminho_modelo)
+            calibrador_skpro = Modelagem.carregar_modelo_pickle(caminho_modelo)
 
             # ===============================
             # FUNÇÃO DE IC
@@ -404,13 +522,21 @@ class Modelagem:
         base["propensity_score"] = ps
         base["propensity_logit"] = np.log(ps / (1 - ps))
         tratados, controles = base[t.eq(1)], base[t.eq(0)]
-        nn = NearestNeighbors(n_neighbors=1).fit(controles[["propensity_logit"]])
+        if tratados.empty or controles.empty:
+            raise ValueError('A base deve conter tratados (1) e controles (0).')
+        n_vizinhos = 1 if replace else len(controles)
+        nn = NearestNeighbors(n_neighbors=n_vizinhos).fit(controles[["propensity_logit"]])
         dist, idx = nn.kneighbors(tratados[["propensity_logit"]])
         usados, pares = set(), []
         limite = None if caliper is None else caliper * base.propensity_logit.std()
-        for (i, row), d, j in zip(tratados.iterrows(), dist.ravel(), idx.ravel()):
+        for posicao, (i, row) in enumerate(tratados.iterrows()):
+            candidato = next(((d, j) for d, j in zip(dist[posicao], idx[posicao])
+                              if replace or controles.index[j] not in usados), None)
+            if candidato is None:
+                continue
+            d, j = candidato
             controle_idx = controles.index[j]
-            if (limite is not None and d > limite) or (not replace and controle_idx in usados):
+            if limite is not None and d > limite:
                 continue
             usados.add(controle_idx)
             pares.append({
@@ -486,6 +612,10 @@ otimizacao_hyperopt_regressao = Modelagem.otimizacao_hyperopt_regressao
 otimizacao_hyperopt_classificacao = Modelagem.otimizacao_hyperopt_classificacao
 calibracao_probabilidade = Modelagem.calibracao_probabilidade
 calibra_intervalo_predicao_regressao = Modelagem.calibra_intervalo_predicao_regressao
+treinar_skpro_residual_double = Modelagem.treinar_skpro_residual_double
+predizer_intervalos_skpro = Modelagem.predizer_intervalos_skpro
+treinar_mapie_split_conformal = Modelagem.treinar_mapie_split_conformal
+predizer_intervalos_mapie = Modelagem.predizer_intervalos_mapie
 predizer_probabilidade = Modelagem.predizer_probabilidade
 predizer = Modelagem.predizer
 validacao_cruzada_classificacao = Modelagem.validacao_cruzada_classificacao

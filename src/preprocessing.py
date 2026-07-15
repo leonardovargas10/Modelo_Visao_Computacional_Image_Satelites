@@ -3,10 +3,13 @@ from ._shared import *
 
 class PreProcessamento:
     @staticmethod
-    def separa_treino_teste(target, dados, size):
+    def separa_treino_teste(target, dados, size, estratificar=False, random_state=42):
         x = dados.drop(target, axis = 1)
         y = dados[target]
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size= size, random_state = 42)
+        stratify = y if estratificar else None
+        x_train, x_test, y_train, y_test = train_test_split(
+            x, y, test_size=size, random_state=random_state, stratify=stratify
+        )
 
         df_train = pd.concat([y_train, x_train], axis = 1)
         df_test = pd.concat([y_test, x_test], axis = 1)
@@ -14,20 +17,22 @@ class PreProcessamento:
         return df_train, df_test
 
     @staticmethod
-    def discretiza_variavel(df, variavel_quant, variavel_qualit, bins, labels, right):
-        df[variavel_qualit] = pd.cut(
-            df[variavel_quant], 
+    def discretiza_variavel(df, variavel_quant, variavel_qualit, bins, labels, right=True, inplace=False):
+        resultado = df if inplace else df.copy()
+        resultado[variavel_qualit] = pd.cut(
+            resultado[variavel_quant],
             bins= bins, 
             labels= labels, 
             right = right
         )
-        df.drop(variavel_quant, axis = 1, inplace = True)
+        resultado.drop(variavel_quant, axis=1, inplace=True)
+        return resultado
 
     @staticmethod
-    def simple_imputer(df):
+    def simple_imputer(df, strategy='median', fill_value=None):
 
         df_aux = df.copy()
-        imputer = SimpleImputer(strategy = 'median')
+        imputer = SimpleImputer(strategy=strategy, fill_value=fill_value)
         imputer.fit(df_aux)
 
         return imputer
@@ -80,22 +85,19 @@ class PreProcessamento:
         return str(int(number))
 
     @staticmethod
-    def muda_tipagem_variavel(df, feature, type):
-
-        if type == "int":
-            df[feature] = df[feature].apply(lambda x: int(x) if pd.notnull(x) else 999999)
-        else:
-            df[feature] = df[feature].apply(lambda x: float(x) if pd.notnull(x) else 999999)
-
-        df.replace(999999, np.nan, inplace=True)
-
-        return df[feature]
+    def muda_tipagem_variavel(df, feature, type, inplace=False):
+        """Converte uma coluna sem usar sentinelas nem alterar outras colunas."""
+        if type not in {"int", "float"}:
+            raise ValueError("type deve ser 'int' ou 'float'.")
+        serie = pd.to_numeric(df[feature], errors='coerce')
+        serie = serie.astype('Int64') if type == "int" else serie.astype(float)
+        if inplace:
+            df[feature] = serie
+        return serie
 
     @staticmethod
     def transform_to_percentiles(df, n, variavel_continua):
         # Calcula os limites dos percentiles
-        percentile_limits = [i / n for i in range(n+1)] 
-        
         # Aplica a função qcut para transformar a variável em percentiles
         percentiles = pd.qcut(df[variavel_continua], q=n, labels=False, duplicates='drop')
         
@@ -104,7 +106,7 @@ class PreProcessamento:
     @staticmethod
     def separa_feature_target(target, dados):
         x = dados.drop(target, axis = 1)
-        y = dados[[target]]
+        y = dados[target]
 
         return x, y
 
@@ -195,7 +197,7 @@ class PreProcessamento:
             pesos = compute_class_weight(class_weight='balanced', classes=classes, y=y)
             return dict(zip(classes, pesos))
 
-        if len(classes) != 2:
+        if len(classes) != 2 or set(classes) != {0, 1}:
             raise ValueError("calcula_class_weight espera um target binário (0/1) para 'scale_pos_weight'/'dict'.")
 
         n_negativos = contagens[classes == 0][0] if 0 in classes else contagens[0]
@@ -237,7 +239,7 @@ class PreProcessamento:
         """
         base = df[colunas] if colunas is not None else df
         qtd_nulos = base.isnull().sum()
-        percentual_nulos = (qtd_nulos / len(base) * 100).round(2)
+        percentual_nulos = (qtd_nulos / len(base) * 100).round(2) if len(base) else qtd_nulos.astype(float)
 
         resultado = pd.DataFrame({
             'variavel': qtd_nulos.index,

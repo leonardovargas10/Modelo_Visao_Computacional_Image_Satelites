@@ -66,8 +66,20 @@ class SelecaoFeatures:
 
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(X)
-
-        mean_abs_shap = np.abs(shap_values).mean(axis=0)
+        valores = shap_values
+        if isinstance(valores, list):
+            valores_importancia = np.stack([np.asarray(v) for v in valores], axis=0)
+            mean_abs_shap = np.abs(valores_importancia).mean(axis=(0, 1))
+        else:
+            valores_importancia = np.asarray(valores)
+            if valores_importancia.ndim == 3:
+                # Suporta tanto (amostra, feature, classe) quanto
+                # (classe, amostra, feature).
+                eixo_feature = 1 if valores_importancia.shape[1] == X.shape[1] else 2
+                eixos_media = tuple(i for i in range(3) if i != eixo_feature)
+                mean_abs_shap = np.abs(valores_importancia).mean(axis=eixos_media)
+            else:
+                mean_abs_shap = np.abs(valores_importancia).mean(axis=0)
 
         importance_df = (
             pd.DataFrame({
@@ -80,7 +92,8 @@ class SelecaoFeatures:
             .reset_index(drop=True)
         )
 
-        importance_df["importance_pct"] = (importance_df["importance"]/ importance_df["importance"].sum()* 100)
+        total = importance_df["importance"].sum()
+        importance_df["importance_pct"] = (importance_df["importance"] / total * 100) if total else 0.0
 
         return importance_df, shap_values
 
@@ -267,7 +280,7 @@ class SelecaoFeatures:
         historico_df = pd.DataFrame(historico)
         return features_atuais, historico_df
 
-@staticmethod
+    @staticmethod
     def seleciona_boruta(x, y, tipo='classificacao', max_iter=100, percentil=100,
                           alpha=0.05, semente=42, **model_params):
         """Seleção via Boruta: cria cópias "sombra" (shadow features)
@@ -347,7 +360,7 @@ class SelecaoFeatures:
         safras seguintes é um risco de drift silencioso em produção, então
         aqui o corte é por estabilidade, não por poder discriminante.
 
-        Reaproveita `Metricas.calcula_psi_temporal` por trás: para cada
+        Reaproveita `Analytics.calcula_psi_temporal` por trás: para cada
         variável, calcula o PSI de cada período contra o período de
         referência e resume num único critério de corte.
 
@@ -357,7 +370,7 @@ class SelecaoFeatures:
         colunas : lista de variáveis candidatas a avaliar.
         coluna_tempo : coluna de período (safra/data/mês).
         limite_psi : acima disso a variável é considerada instável.
-        periodo_referencia : ver `Metricas.calcula_psi_temporal`; se None,
+        periodo_referencia : ver `Analytics.calcula_psi_temporal`; se None,
             usa o primeiro período.
         criterio : {'psi_maximo', 'psi_medio'}
             'psi_maximo' -> reprova a variável se QUALQUER período isolado
@@ -372,16 +385,20 @@ class SelecaoFeatures:
         resumo : DataFrame com o PSI por variável (máximo, médio e status)
             — ordenado da mais estável para a menos estável.
         """
+        from .analytics import Analytics
+
+        if criterio not in {'psi_maximo', 'psi_medio'}:
+            raise ValueError("criterio deve ser 'psi_maximo' ou 'psi_medio'.")
         linhas = []
         for coluna in colunas:
             try:
-                resumo_psi, _ = Metricas.calcula_psi_temporal(
+                resumo_psi, _ = Analytics.calcula_psi_temporal(
                     df, coluna_variavel=coluna, coluna_tempo=coluna_tempo,
                     tipo='numerica', n_bins=n_bins, periodo_referencia=periodo_referencia,
                 )
             except (ValueError, TypeError):
                 # Variável não numérica ou incompatível com discretização -> trata como categórica
-                resumo_psi, _ = Metricas.calcula_psi_temporal(
+                resumo_psi, _ = Analytics.calcula_psi_temporal(
                     df, coluna_variavel=coluna, coluna_tempo=coluna_tempo,
                     tipo='categorica', periodo_referencia=periodo_referencia,
                 )
