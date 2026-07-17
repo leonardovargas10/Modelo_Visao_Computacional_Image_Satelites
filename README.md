@@ -1038,6 +1038,8 @@ O ranking não deve ser interpretado como uma hierarquia universal entre arquite
 
 Os quatro experimentos principais do benchmark possuem resultados registrados e comparados sob o mesmo protocolo de splits.
 
+Os arquivos não serão submetidos ao repositório por questões de limite de memória do GitHub
+
 ---
 
 # Considerações Finais
