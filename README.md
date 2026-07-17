@@ -34,10 +34,9 @@
 11. Vision Transformer com LoRA
 12. Extração de Embeddings com ViT Congelado
 13. LightGBM sobre Embeddings
-14. Interpretabilidade
-15. Comparação Consolidada
-16. Resultados Consolidados
-17. Artefatos Gerados
+14. Comparação Consolidada
+15. Resultados Consolidados
+16. Artefatos Gerados
 
 ---
 
@@ -84,7 +83,7 @@ Modelos de Visão Computacional vêm sendo utilizados em diversas aplicações e
 
 Imagens de satélite permitem identificar automaticamente diferentes tipos de cobertura e uso do solo, fornecendo informações relevantes para tomada de decisão em setores públicos e privados.
 
-Nos últimos anos surgiram diversas estratégias para classificação de imagens. Desde Redes Neurais Convolucionais treinadas do zero até grandes modelos pré-treinados baseados em Transformers, cada abordagem apresenta vantagens e limitações relacionadas ao desempenho, custo computacional, interpretabilidade e facilidade de implantação.
+Nos últimos anos surgiram diversas estratégias para classificação de imagens. Desde Redes Neurais Convolucionais treinadas do zero até grandes modelos pré-treinados baseados em Transformers, cada abordagem apresenta vantagens e limitações relacionadas ao desempenho, custo computacional e facilidade de implantação.
 
 Dessa forma, a escolha da arquitetura ideal não deve considerar apenas a acurácia obtida sobre um conjunto de testes.
 
@@ -96,7 +95,6 @@ Também devem ser avaliados fatores como:
 - quantidade de parâmetros;
 - consumo de memória;
 - facilidade de implementação;
-- interpretabilidade;
 - escalabilidade para produção.
 
 Este projeto propõe um benchmark controlado comparando diferentes estratégias modernas de aprendizado de representação para classificação de imagens de satélite.
@@ -126,7 +124,6 @@ O objetivo não consiste em encontrar a arquitetura perfeita, mas compreender os
 - Otimização da CNN utilizando Optuna;
 - Extração de embeddings;
 - LightGBM utilizando embeddings;
-- Interpretabilidade das arquiteturas;
 - Comparação consolidada entre todos os modelos.
 
 ---
@@ -155,8 +152,6 @@ Entre os principais tópicos estudados destacam-se:
 - LightGBM;
 - Otimização Bayesiana;
 - Optuna;
-- Grad-CAM;
-- Attention Maps.
 
 ---
 
@@ -238,10 +233,6 @@ Pré-processamento
 ├──────────────────────────────────────────┤
 │ Embeddings + LightGBM                    │
 └──────────────────────────────────────────┘
-
-↓
-
-Interpretabilidade
 
 ↓
 
@@ -435,7 +426,7 @@ O objetivo desta etapa é compreender como construir uma CNN moderna e bem regul
 - loss, backpropagation, otimizador, validação e early stopping pertencem ao loop de treinamento;
 - Dropout, weight decay, augmentation e early stopping ajudam a reduzir overfitting.
 
-O resultado quantitativo desta etapa está documentado na seção [Resultados Consolidados](#16-resultados-consolidados).
+O resultado quantitativo desta etapa está documentado na seção [Resultados Consolidados](#15-resultados-consolidados).
 
 ---
 
@@ -740,31 +731,7 @@ O objetivo foi avaliar até que ponto uma representação aprendida previamente 
 
 ---
 
-# 14. Interpretabilidade
-
-Além das métricas tradicionais, serão utilizadas técnicas de interpretabilidade para compreender como os modelos realizam suas previsões.
-
-## CNN
-
-Serão apresentados:
-
-- visualização dos filtros aprendidos;
-- feature maps;
-- Grad-CAM.
-
-## Vision Transformer
-
-Serão analisados:
-
-- mapas de atenção;
-- regiões mais relevantes da imagem;
-- diferenças em relação às CNNs.
-
-A interpretação qualitativa permitirá compreender quais regiões da imagem influenciam as decisões de cada arquitetura.
-
----
-
-# 15. Comparação Consolidada
+# 14. Comparação Consolidada
 
 O benchmark utiliza uma tabela única para comparar as quatro estratégias avaliadas.
 
@@ -795,11 +762,10 @@ Também foi analisado o equilíbrio entre:
 - velocidade de treinamento;
 - velocidade de inferência;
 - facilidade de implementação;
-- interpretabilidade.
 
 ---
 
-# 16. Resultados Consolidados
+# 15. Resultados Consolidados
 
 ## Progresso do Benchmark
 
@@ -814,7 +780,6 @@ Também foi analisado o equilíbrio entre:
 | Embeddings do ViT + LightGBM | Concluído |
 | ViT adaptado com LoRA | Concluído |
 | Comparação consolidada | Concluída para os quatro modelos |
-| Interpretabilidade final | Pendente de execução |
 
 ## CNN do Zero + Optuna
 
@@ -1003,6 +968,8 @@ A diferença entre validação e teste foi de aproximadamente **0,0003** (`0,936
 | Artefato adicional treinado | 2,48 MB | 90,06 MB | 6,07 MB | **1,17 MB** |
 | Pipeline completo estimado | 2,48 MB | 90,06 MB | 335,62 MB | 328,48 MB |
 
+Neste estudo, a expressão **pipeline mais rápido** refere-se ao ciclo medido de preparação e treinamento: embeddings + LightGBM concluiu a extração e a busca em aproximadamente **7,5 minutos**, o menor tempo entre as quatro estratégias. Com os embeddings já disponíveis, o LightGBM também classificou o teste em apenas **0,247 segundo**. A inferência ponta a ponta é uma medição diferente, pois inclui executar novamente o ViT; nessa medição específica, a CNN registrou 7,2 segundos.
+
 ## Conclusão do Benchmark
 
 ### 1º lugar — ResNet50: F1 Macro 0,9576
@@ -1037,17 +1004,17 @@ A abordagem continua muito útil quando embeddings podem ser calculados uma vez 
 
 A CNN começou com pesos aleatórios e precisou aprender no próprio EuroSAT desde filtros básicos até representações de alto nível. Os outros três métodos partiram de conhecimento visual adquirido em bases muito maiores. Essa diferença de ponto de partida, somada à arquitetura didática e relativamente compacta, explica a menor pontuação.
 
-Mesmo em quarto lugar, a CNN não representa um experimento ruim: apresentou boa generalização, inferência mais rápida e o menor pipeline completo. Ela cumpriu o papel de demonstrar todo o aprendizado de features do zero e permanece atraente quando simplicidade, tamanho do artefato e velocidade são mais importantes do que obter a maior F1 possível.
+Mesmo em quarto lugar, a CNN não representa um experimento ruim: apresentou boa generalização e o menor pipeline completo. Ela cumpriu o papel de demonstrar todo o aprendizado de features do zero e permanece atraente quando simplicidade e tamanho do artefato são mais importantes do que obter a maior F1 possível.
 
 ### Decisão Final
 
-Para este problema e este protocolo experimental, a **ResNet50 é a melhor escolha preditiva e também o melhor equilíbrio geral**. O **ViT + LoRA** ocupa o segundo lugar e é a melhor demonstração de adaptação eficiente em número de parâmetros. O **ViT + LightGBM** favorece reuso de embeddings e treinamento tabular rápido. A **CNN do zero** oferece o pipeline mais compacto, veloz e didático.
+Para este problema e este protocolo experimental, a **ResNet50 é a melhor escolha preditiva e também o melhor equilíbrio geral**. O **ViT + LoRA** ocupa o segundo lugar e é a melhor demonstração de adaptação eficiente em número de parâmetros. O **ViT + LightGBM foi o pipeline mais rápido de preparar e treinar**, concluindo extração e busca do classificador em aproximadamente 7,5 minutos, além de favorecer o reuso dos embeddings. A **CNN do zero** oferece o pipeline mais compacto e didático.
 
 O ranking não deve ser interpretado como uma hierarquia universal entre arquiteturas. Ele descreve o comportamento das configurações executadas no EuroSAT RGB, com os mesmos splits e o hardware disponível.
 
 ---
 
-# 17. Artefatos Gerados
+# 16. Artefatos Gerados
 
 | Artefato | Localização | Descrição |
 |-----------|-------------|-----------|
@@ -1069,7 +1036,7 @@ O ranking não deve ser interpretado como uma hierarquia universal entre arquite
 | `VIT_EMBEDDINGS_LIGHTGBM.png` | Projeto | Infográfico do pipeline ViT congelado + LightGBM |
 | `README.md` | Projeto | Documentação completa do benchmark |
 
-Os quatro experimentos principais do benchmark possuem resultados registrados. A etapa ainda pendente é a expansão das análises qualitativas de interpretabilidade.
+Os quatro experimentos principais do benchmark possuem resultados registrados e comparados sob o mesmo protocolo de splits.
 
 ---
 
@@ -1077,10 +1044,10 @@ Os quatro experimentos principais do benchmark possuem resultados registrados. A
 
 Este projeto desenvolve um benchmark de estratégias modernas de Visão Computacional aplicadas à classificação de imagens de satélite.
 
-Ao comparar uma CNN desenvolvida do zero, uma arquitetura baseada em Transfer Learning, um Vision Transformer adaptado com LoRA e uma abordagem híbrida baseada em embeddings e LightGBM, torna-se possível compreender os principais trade-offs entre desempenho, custo computacional, interpretabilidade e facilidade de implantação.
+Ao comparar uma CNN desenvolvida do zero, uma arquitetura baseada em Transfer Learning, um Vision Transformer adaptado com LoRA e uma abordagem híbrida baseada em embeddings e LightGBM, torna-se possível compreender os principais trade-offs entre desempenho, custo computacional e facilidade de implantação.
 
 O benchmark final apresentou a seguinte ordem por F1 Macro de teste: **ResNet50, 0,9576**; **ViT + LoRA, 0,9360**; **ViT congelado + LightGBM, 0,9174**; e **CNN do zero + Optuna, 0,8379**. As três estratégias baseadas em representações pré-treinadas superaram a CNN do zero, confirmando o valor da transferência de conhecimento visual.
 
-A ResNet50 ofereceu o melhor desempenho preditivo e a melhor adequação aos padrões locais do EuroSAT. O LoRA mostrou que é possível adaptar um Transformer treinando somente 0,351% dos parâmetros e mantendo validação e teste praticamente iguais. O pipeline de embeddings mostrou o valor do reuso de representações e do treinamento supervisionado rápido. A CNN permaneceu como a solução mais compacta e veloz, além de cumprir o objetivo didático de construir todo o aprendizado visual desde os pixels.
+A ResNet50 ofereceu o melhor desempenho preditivo e a melhor adequação aos padrões locais do EuroSAT. O LoRA mostrou que é possível adaptar um Transformer treinando somente 0,351% dos parâmetros e mantendo validação e teste praticamente iguais. O pipeline de embeddings + LightGBM foi o mais rápido de preparar e treinar, além de mostrar o valor do reuso de representações. A CNN permaneceu como a solução mais compacta e cumpriu o objetivo didático de construir todo o aprendizado visual desde os pixels.
 
 O objetivo não é identificar uma arquitetura universalmente superior, mas construir um guia prático que auxilie na escolha da abordagem mais adequada para diferentes cenários de classificação de imagens, utilizando um protocolo experimental único, reproduzível e didático.
