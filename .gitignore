@@ -10,6 +10,10 @@
 *.tar.gz
 *.mp4
 *.pt 
+CODEX_NOTEBOOK_SPEC.md
 __pycache__/
 data/
 reports/
+models/
+.agents/
+.codex/

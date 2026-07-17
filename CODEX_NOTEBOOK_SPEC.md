@@ -128,12 +128,11 @@ Não implementar:
 14. CNN desenvolvida do zero
 15. Otimização da CNN com Optuna
 16. Transfer Learning com ResNet50
-17. Extração de embeddings com ViT
-18. LightGBM sobre embeddings
-19. Vision Transformer adaptado com LoRA
-20. Interpretabilidade
-21. Comparação consolidada e análise de erros
-22. Trade-offs, conclusões e próximos passos
+17. ViT congelado: extração de embeddings e LightGBM
+18. Vision Transformer adaptado com LoRA
+19. Interpretabilidade
+20. Comparação consolidada e análise de erros
+21. Trade-offs, conclusões e próximos passos
 
 ---
 
