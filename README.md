@@ -8,7 +8,7 @@
   <img src="./img_01.jpeg" width="50%">
 </p>
 
-> **Autor:** Leonardo Aderaldo Vargas · T789785<br>
+> **Autor:** Leonardo Aderaldo Vargas<br>
 > **Dataset:** EuroSAT RGB
 
 > **Status:**
